@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+    alias(libs.plugins.kotlinxSerialization)
+    id("org.jetbrains.kotlin.kapt")
 }
 
 android {
@@ -47,6 +49,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
 }
 
 dependencies {
@@ -67,6 +70,27 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     val nav_version = "2.8.9"
-
     implementation("androidx.navigation:navigation-compose:$nav_version")
+
+    implementation("androidx.compose.material:material-icons-extended")
+
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.logging)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.client.serialization.kotlinx.json)
+    implementation(libs.ktor.client.android)
+    implementation("io.coil-kt:coil-compose:2.5.0")
+
+
+    implementation("androidx.camera:camera-core:1.3.0")
+    implementation("androidx.camera:camera-camera2:1.3.0")
+    implementation("androidx.camera:camera-lifecycle:1.3.0")
+    implementation("androidx.camera:camera-view:1.3.0")
+    implementation("androidx.camera:camera-video:1.3.0")
+
+
+        implementation ("com.github.GhayasAhmad:auto-background-remover:1.0.3")
+
+
+
 }
