@@ -7,10 +7,12 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.launch
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -36,11 +39,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,10 +63,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +90,7 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
+@OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun HomeScreen(navController: NavController) {
@@ -144,162 +158,85 @@ fun HomeScreen(navController: NavController) {
 
     val gradientBrush = Brush.verticalGradient(
         colors = listOf(
-            Color(0xFFa92c76),
-            Color(0xFFea553e)
+            Color(0xFFffcb82),
+            Color(0xFFffae81),
+            Color(0xFFff8381)
         )
     )
+
+
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
+            .background(gradientBrush),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
+
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(500.dp)
-                .clip(RoundedCornerShape(bottomStart = 30.dp, bottomEnd = 30.dp))
-                .background(gradientBrush)
+                .padding(top = 60.dp, start = 14.dp, end = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 24.dp, vertical = 32.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Photo Editor",
-                        color = Color.White,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(Color.White),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = Color(0xFFea553e),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(80.dp))
-                Text(
-                    text = "Create New",
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(40.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Box(
-                        modifier = Modifier.clickable {
-                            galleryLauncher.launch(
-                                PickVisualMediaRequest(
-                                    mediaType = ActivityResultContracts.PickVisualMedia.ImageOnly
-                                )
-                            )
-                        }
-                            .clip(RoundedCornerShape(16.dp))
-                            .size(width = 150.dp, height = 180.dp)
-                            .background(color = Color.White),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(
-                                modifier = Modifier
-                                    .size(50.dp)
-                                    .clip(CircleShape)
-                                    .background(gradientBrush),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Add",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(30.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "From Files",
-                                color = Color(0xFFea553e),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier.clickable {
-                            if (ContextCompat.checkSelfPermission(
-                                    context,
-                                    android.Manifest.permission.CAMERA
-                                ) == PackageManager.PERMISSION_GRANTED
-                            ) {
-                                cameraLauncher.launch()
-                            } else {
-                                cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                            }
-                        }
-                            .size(width = 150.dp, height = 180.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFFec5c6d))
-                            .border(BorderStroke(2.dp, Color.White), RoundedCornerShape(16.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.CameraAlt,
-                                contentDescription = "Camera",
-                                modifier = Modifier.size(50.dp),
-                                tint = Color.White,
-                            )
-                            Text(
-                                text = "By Camera",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily(Font(R.font.roboto1)),
-                            )
-                        }
-                    }
-                }
-            }
+            Text(
+                text = "Photo Editor",
+                fontWeight = FontWeight.W900,
+                fontSize = 20.sp,
+                color = Color(0XFF654f25),
+                modifier = Modifier.weight(1f)
+            )
+            Image(
+                painter = painterResource(id = R.drawable.ic_king),
+                contentDescription = "",
+                colorFilter = ColorFilter.tint(Color(0XFF654f25)),
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = "",
+                tint = Color(0XFF654f25),
+                modifier = Modifier.size(25.dp)
+            )
         }
 
-        Spacer(modifier = Modifier.height(50.dp))
+        Spacer(modifier = Modifier.height(300.dp))
+
+
         Text(
-            text = "For you",
-            fontSize = 30.sp,
-            fontFamily = FontFamily(Font(R.font.roboto1)),
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 20.dp)
-        )
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(8.dp),
+            text = "CREATE NEW",
+            fontWeight = FontWeight.W500,
+            fontSize = 16.sp,
+            color = Color(0XFF654f25),
             modifier = Modifier
-                .fillMaxWidth()
-                .height(1500.dp)
+                .align(Alignment.Start)
+                .padding(start = 30.dp, bottom = 16.dp)
+        )
+
+
+        Card(
+            modifier = Modifier
+                .padding(10.dp)
+                .width(375.dp)
+                .height(200.dp)
+                .clip(RoundedCornerShape(10.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
         ) {
-            allWeatherData?.photos?.let { photoList ->
-                items(photoList) { photo ->
-                    PhotoItem(photo,navController)
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                EditItem(icon = R.drawable.ic_video, text = "Video") {
+
+                }
+                EditItem(icon = R.drawable.ic_photo, text = "Photo") {
+                    galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
+                EditItem(icon = R.drawable.ic_collage, text = "Collage") {
+
                 }
             }
         }
@@ -307,13 +244,52 @@ fun HomeScreen(navController: NavController) {
 }
 
 @Composable
+fun EditItem(
+    icon: Int,
+    text: String,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+
+    ) {
+        Box(
+            modifier = Modifier
+                .clickable { onClick() }
+                .clip(CircleShape)
+                .size(70.dp)
+                .background(color = Color(0XFFfd5378)),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(id = icon),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(Color.White),
+                modifier = Modifier.size(30.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = text,
+            color = Color(0xFF654f25),
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+
+@Composable
 fun PhotoItem(photo: Photo, navController: NavController) {
     Card(
         shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.clickable {
-            val encodedUrl = URLEncoder.encode(photo.src.medium, StandardCharsets.UTF_8.toString())
-            navController.navigate("PhotoEditor/$encodedUrl")
-        }
+        modifier = Modifier
+            .clickable {
+                val encodedUrl =
+                    URLEncoder.encode(photo.src.medium, StandardCharsets.UTF_8.toString())
+                navController.navigate("PhotoEditor/$encodedUrl")
+            }
             .padding(4.dp)
             .fillMaxWidth()
             .aspectRatio(1f),
@@ -329,8 +305,6 @@ fun PhotoItem(photo: Photo, navController: NavController) {
         }
     }
 }
-
-
 
 
 fun Bitmap.toUri(context: Context): Uri? {

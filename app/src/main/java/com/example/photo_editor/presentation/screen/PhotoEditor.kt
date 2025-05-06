@@ -7,6 +7,8 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -50,6 +54,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.photo_editor.R
+import com.image.cropview.CropType
+import com.image.cropview.EdgeType
+import com.image.cropview.ImageCrop
 import com.slowmac.autobackgroundremover.BackgroundRemover
 import com.slowmac.autobackgroundremover.OnBackgroundChangeListener
 import kotlinx.coroutines.Dispatchers
@@ -62,33 +69,82 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
     val context = LocalContext.current
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var processedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var lastBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var imageAspectRatio by remember { mutableStateOf(1f) }
+    var isProcessing by remember { mutableStateOf(false) }
+    var showCropView by remember { mutableStateOf(false) }
+
+
+    var imageCrop by remember { mutableStateOf<ImageCrop?>(null) }
 
     LaunchedEffect(imageUri) {
         imageUri?.let {
-            if (it.startsWith("http")) {
-                originalBitmap = loadBitmapFromUrl(it)
+            val bitmap = if (it.startsWith("http")) {
+                loadBitmapFromUrl(it)
             } else {
                 val decodedUri = Uri.decode(it)
                 val uri = Uri.parse(decodedUri)
-                originalBitmap = uriToBitmap(context, uri)
+                uriToBitmap(context, uri)
             }
-            processedBitmap = originalBitmap
+
+            bitmap?.let {
+                originalBitmap = it
+                processedBitmap = it
+                imageAspectRatio = it.width.toFloat() / it.height.toFloat()
+                imageCrop = ImageCrop(it)
+            }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (processedBitmap != null) {
-            androidx.compose.foundation.Image(
-                bitmap = processedBitmap!!.asImageBitmap(),
-                contentDescription = "Edited Image",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
-            )
-        } else {
-            Text(
-                text = "No image selected",
-                modifier = Modifier.align(Alignment.Center)
-            )
+
+
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            when {
+                showCropView && imageCrop != null -> {
+                    imageCrop!!.ImageCropView(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(imageAspectRatio),
+                        guideLineColor = Color.LightGray,
+                        guideLineWidth = 2.dp,
+                        edgeCircleSize = 5.dp,
+                        showGuideLines = true,
+                        cropType = CropType.SQUARE,
+                        edgeType = EdgeType.CIRCULAR
+                    )
+                }
+
+                processedBitmap != null -> {
+                    Image(
+                        bitmap = processedBitmap!!.asImageBitmap(),
+                        contentDescription = "Edited Image",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(imageAspectRatio),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+
+                else -> {
+                    Text("No image selected", modifier = Modifier.align(Alignment.Center))
+                }
+            }
+        }
+
+
+        if (isProcessing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color.White)
+            }
         }
 
         Column(
@@ -113,7 +169,17 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                 }
 
                 IconButton(
-                    onClick = { /* Save or confirm logic */ },
+                    onClick = {
+
+                        if (showCropView && imageCrop != null) {
+                            val croppedBitmap = imageCrop!!.onCrop()
+                            processedBitmap = croppedBitmap
+                            imageAspectRatio = croppedBitmap.width.toFloat() / croppedBitmap.height.toFloat()
+                            showCropView = false
+                        } else {
+
+                        }
+                    },
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
@@ -133,27 +199,42 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+
                 PhotoEditItem(
                     icon = painterResource(id = R.drawable.layer),
                     title = "Bg Remove"
                 ) {
                     originalBitmap?.let { bitmap ->
+                        isProcessing = true
+                        lastBitmap = processedBitmap
                         BackgroundRemover.bitmapForProcessing(
                             bitmap,
                             true,
                             object : OnBackgroundChangeListener {
                                 override fun onSuccess(result: Bitmap) {
                                     processedBitmap = result
+                                    imageAspectRatio = result.width.toFloat() / result.height.toFloat()
+                                    imageCrop = ImageCrop(result)
+                                    isProcessing = false
                                 }
 
                                 override fun onFailed(exception: Exception) {
+                                    isProcessing = false
+                                    Toast.makeText(context, "Background removal failed", Toast.LENGTH_SHORT).show()
                                     exception.printStackTrace()
                                 }
                             }
                         )
                     }
                 }
-                PhotoEditItem(icon = painterResource(id = R.drawable.crop), title = "Crop") {}
+
+
+
+
+                PhotoEditItem(icon = painterResource(id = R.drawable.crop), title = "Crop") {
+                    showCropView = true
+                }
+
                 PhotoEditItem(icon = painterResource(id = R.drawable.brush), title = "Canvas") {}
                 PhotoEditItem(icon = painterResource(id = R.drawable.filters), title = "Filters") {}
                 PhotoEditItem(icon = painterResource(id = R.drawable.light), title = "Effect") {}
@@ -163,6 +244,8 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
         }
     }
 }
+
+
 
 @Composable
 fun PhotoEditItem(icon: Painter, title: String,onClick: () -> Unit ) {
@@ -229,5 +312,3 @@ suspend fun loadBitmapFromUrl(url: String): Bitmap? {
         }
     }
 }
-
-

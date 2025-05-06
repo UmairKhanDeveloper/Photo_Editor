@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.kotlinxSerialization)
     id("org.jetbrains.kotlin.kapt")
+    alias(libs.plugins.compose.compiler)
 }
 
 android {
@@ -40,9 +41,6 @@ android {
     }
     buildFeatures {
         compose = true
-    }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
     }
     packaging {
         resources {
@@ -92,5 +90,6 @@ dependencies {
         implementation ("com.github.GhayasAhmad:auto-background-remover:1.0.3")
 
 
+    implementation ("io.github.rroohit:ImageCropView:3.1.1")
 
 }
