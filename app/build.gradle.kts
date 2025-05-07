@@ -86,10 +86,11 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.0")
     implementation("androidx.camera:camera-video:1.3.0")
 
-
-        implementation ("com.github.GhayasAhmad:auto-background-remover:1.0.3")
-
-
+    implementation ("com.github.GhayasAhmad:auto-background-remover:1.0.3")
     implementation ("io.github.rroohit:ImageCropView:3.1.1")
+    implementation  ("io.ak1:drawbox:1.0.3")
+    implementation ("com.github.GhayasAhmad:auto-background-remover:1.0.3")
+
+    implementation ("com.burhanrashid52:photoeditor:3.0.2")
 
 }
