@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -65,6 +67,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -92,6 +95,15 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.roundToInt
+import android.content.ContentValues
+import android.os.Environment
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.copy
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 enum class EditTool {
     NONE, FILTERS, EFFECTS, TEXT, FRAME, BRUSH
@@ -153,6 +165,200 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
 
     var currentFilter: ImageFilterType? by rememberSaveable { mutableStateOf(null) }
     var selectedFrameResId by remember { mutableStateOf<Int?>(null) }
+    var downloadDialog by remember { mutableStateOf(false) }
+
+    if (downloadDialog) {
+        AlertDialog(
+            onDismissRequest = { downloadDialog = false },
+            title = {
+                Text(
+                    text = "Download Image",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            text = {
+                Text(
+                    text = "Do you want to download the edited image?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        downloadDialog = false
+                        try {
+                            // Create a bitmap that includes all modifications
+                            processedBitmap?.let { bitmap ->
+                                // Create a bitmap with the same dimensions as the displayed image
+                                val resultBitmap = Bitmap.createBitmap(
+                                    bitmap.width,
+                                    bitmap.height,
+                                    Bitmap.Config.ARGB_8888
+                                )
+                                val canvas = android.graphics.Canvas(resultBitmap)
+                                
+                                // Draw the base image with any applied filters
+                                val filteredBitmap = if (currentFilter != null) {
+                                    applyFilter(bitmap, currentFilter!!)
+                                } else {
+                                    bitmap
+                                }
+                                canvas.drawBitmap(filteredBitmap, 0f, 0f, null)
+                                
+                                // Draw all paths (brush strokes) with exact positions and styles
+                                paths.forEach { pathData ->
+                                    try {
+                                        val paint = android.graphics.Paint().apply {
+                                            color = android.graphics.Color.parseColor(
+                                                String.format("#%08X", pathData.color.value.toInt())
+                                            )
+                                            strokeWidth = pathData.strokeWidth
+                                            style = android.graphics.Paint.Style.STROKE
+                                            strokeCap = android.graphics.Paint.Cap.ROUND
+                                            strokeJoin = android.graphics.Paint.Join.ROUND
+                                            alpha = (pathData.color.alpha * 255).toInt()
+                                        }
+                                        canvas.drawPath(pathData.path.asAndroidPath(), paint)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                                
+                                // Draw all text items with exact positions, rotations, and styles
+                                textItems.forEach { textItem ->
+                                    try {
+                                        val paint = android.graphics.Paint().apply {
+                                            color = android.graphics.Color.parseColor(
+                                                String.format("#%08X", textItem.color.value.toInt())
+                                            )
+                                            textSize = textItem.fontSize * textItem.scale
+                                            isFakeBoldText = textItem.isBold
+                                            if (textItem.shadowRadius > 0) {
+                                                setShadowLayer(
+                                                    textItem.shadowRadius,
+                                                    0f,
+                                                    0f,
+                                                    android.graphics.Color.BLACK
+                                                )
+                                            }
+                                            alpha = (textItem.color.alpha * 255).toInt()
+                                        }
+                                        
+                                        canvas.save()
+                                        canvas.rotate(
+                                            textItem.rotation,
+                                            textItem.position.x,
+                                            textItem.position.y
+                                        )
+                                        canvas.drawText(
+                                            textItem.text,
+                                            textItem.position.x,
+                                            textItem.position.y,
+                                            paint
+                                        )
+                                        canvas.restore()
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                                
+                                // Draw frame if selected
+                                selectedFrameResId?.let { frameResId ->
+                                    try {
+                                        val frameBitmap = BitmapFactory.decodeResource(
+                                            context.resources,
+                                            frameResId
+                                        )
+                                        // Scale frame to match image size
+                                        val scaledFrame = Bitmap.createScaledBitmap(
+                                            frameBitmap,
+                                            bitmap.width,
+                                            bitmap.height,
+                                            true
+                                        )
+                                        canvas.drawBitmap(scaledFrame, 0f, 0f, null)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                                
+                                // Save the final bitmap
+                                try {
+                                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                                        .format(Date())
+                                    val filename = "PhotoEditor_$timestamp.png"
+                                    
+                                    val imagesDir = Environment.getExternalStoragePublicDirectory(
+                                        Environment.DIRECTORY_PICTURES
+                                    )
+                                    val imageFile = File(imagesDir, filename)
+                                    
+                                    FileOutputStream(imageFile).use { out ->
+                                        resultBitmap.compress(
+                                            Bitmap.CompressFormat.PNG,
+                                            100,
+                                            out
+                                        )
+                                    }
+                                    
+                                    // Notify media scanner to make the image visible in gallery
+                                    val values = ContentValues().apply {
+                                        put(MediaStore.Images.Media.DISPLAY_NAME, filename)
+                                        put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                                        put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                                    }
+                                    context.contentResolver.insert(
+                                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                        values
+                                    )
+                                    
+                                    Toast.makeText(
+                                        context,
+                                        "Image saved successfully to Pictures folder",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "Failed to save image: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    e.printStackTrace()
+                                }
+                            } ?: run {
+                                Toast.makeText(
+                                    context,
+                                    "No image to save",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                context,
+                                "Error saving image: ${e.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            e.printStackTrace()
+                        }
+                    }
+                ) {
+                    Text("Yes")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { downloadDialog = false }
+                ) {
+                    Text("No")
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurface
+        )
+    }
+
 
 
     if (showTextDialog) {
@@ -236,7 +442,7 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                     onClick = {
                         textItems.add(
                             TextItem(
-                                id = null, // Pass null since the type is Int?
+                                id = null,
                                 text = inputText,
                                 position = Offset(0f, 0f),
                                 color = selectedColor,
@@ -315,7 +521,9 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                         contentScale = ContentScale.Fit
                     )
 
-                    Canvas(modifier = Modifier.fillMaxSize().zIndex(1f)) {
+                    Canvas(modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(1f)) {
                         paths.forEach { data ->
                             drawPath(
                                 path = data.path,
@@ -402,11 +610,17 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                                         },
                                         onDrag = { change, _ ->
                                             if (isEraser) {
-                                                paths.removeAll { it.path.getBounds().contains(change.position) }
+                                                paths.removeAll {
+                                                    it.path.getBounds().contains(change.position)
+                                                }
                                             } else {
                                                 currentPath.lineTo(change.position.x, change.position.y)
                                                 paths.add(
-                                                    PathData(currentPath, currentColor, currentBrushSize)
+                                                    PathData(
+                                                        path = currentPath.copy(),
+                                                        color = currentColor.copy(alpha = currentOpacity),
+                                                        strokeWidth = currentBrushSize
+                                                    )
                                                 )
                                             }
                                         },
@@ -416,16 +630,28 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                                     )
                                 }
                                 .zIndex(4f)
-                        ) {}
+                        ) {
+                            paths.forEach { pathData ->
+                                drawPath(
+                                    path = pathData.path,
+                                    color = pathData.color,
+                                    style = Stroke(
+                                        width = pathData.strokeWidth,
+                                        cap = StrokeCap.Round,
+                                        join = StrokeJoin.Round
+                                    )
+                                )
+                            }
+                        }
                     }
 
-                    // Frame Overlay - APPLYING THE FRAME
+
                     selectedFrameResId?.let { frameResId ->
                         Image(
                             painter = painterResource(id = frameResId),
                             contentDescription = "Frame",
-                            modifier = Modifier.fillMaxSize(), // Fill the whole image area
-                            contentScale = ContentScale.FillBounds // Stretch frame to fill the bounds
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.FillBounds
                         )
                     }
 
@@ -469,45 +695,66 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
+                .padding(top = 50.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 80.dp, start = 10.dp, end = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
                 IconButton(
                     onClick = { navController.popBackStack() },
                     modifier = Modifier
-                        .size(36.dp)
+                        .padding(start = 16.dp, top = 16.dp)
+                        .size(40.dp)
                         .clip(CircleShape)
-                        .background(Color(0XFF333333))
+                        .background(Color(0xFF333333))
+                        .align(Alignment.TopStart)
                 ) {
                     Icon(Icons.Default.Clear, contentDescription = "Cancel", tint = Color.White)
                 }
 
-                IconButton(
-                    onClick = {
-                        if (showCropView && imageCrop != null) {
-                            val croppedBitmap = imageCrop!!.onCrop()
-                            processedBitmap = croppedBitmap
-                            imageAspectRatio =
-                                croppedBitmap.width.toFloat() / croppedBitmap.height.toFloat()
-                            showCropView = false
-                        } else {
-                            if (currentFilter != null) {
-                                processedBitmap = applyFilter(displayedBitmap!!, currentFilter!!)
-                            }
-                        }
-                    },
+
+                Row(
                     modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color(0XFF56c367))
+                        .padding(end = 16.dp, top = 16.dp)
+                        .wrapContentSize()
+                        .align(Alignment.TopEnd),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Check, contentDescription = "Confirm", tint = Color.White)
+                    IconButton(
+                        onClick = {
+                            if (showCropView && imageCrop != null) {
+                                val croppedBitmap = imageCrop!!.onCrop()
+                                processedBitmap = croppedBitmap
+                                imageAspectRatio =
+                                    croppedBitmap.width.toFloat() / croppedBitmap.height.toFloat()
+                                showCropView = false
+                            } else {
+                                if (currentFilter != null) {
+                                    processedBitmap = applyFilter(displayedBitmap!!, currentFilter!!)
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF56c367))
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = "Confirm", tint = Color.White)
+                    }
+                    IconButton(
+                        onClick = {
+                            downloadDialog = true
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color.Red)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = "Download", tint = Color.White)
+                    }
                 }
             }
+
+
 
             Spacer(modifier = Modifier.weight(1f))
             Spacer(modifier = Modifier.weight(1f))
@@ -544,9 +791,11 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                                 Icon(
                                     Icons.Default.Close,
                                     contentDescription = "Back",
-                                    tint = Color.Black, modifier = Modifier.align(Alignment.End).clickable {
-                                        selectedTool = EditTool.NONE
-                                    },
+                                    tint = Color.Black, modifier = Modifier
+                                        .align(Alignment.End)
+                                        .clickable {
+                                            selectedTool = EditTool.NONE
+                                        },
                                 )
 
                                 LazyRow(
@@ -588,6 +837,15 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                             }
 
                             EditTool.FRAME -> {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Back",
+                                    tint = Color.Black, modifier = Modifier
+                                        .align(Alignment.End)
+                                        .clickable {
+                                            selectedTool = EditTool.NONE
+                                        },
+                                )
                                 val frameList = listOf(
                                     R.drawable.frame1,
                                     R.drawable.frame2,
@@ -630,13 +888,23 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                                                     .size(90.dp)
                                                     .clickable { selectedFrameResId = frameResId }
                                             ) {
-                                                Image(
-                                                    painter = painterResource(id = frameResId),
-                                                    contentDescription = "Frame Preview",
-                                                    modifier = Modifier.fillMaxSize(),
-                                                    contentScale = ContentScale.Crop
-                                                )
+                                                Box(modifier = Modifier.fillMaxSize()) {
+                                                    processedBitmap?.let {
+                                                        Image(
+                                                            bitmap = it.asImageBitmap(),
+                                                            contentDescription = "Edited Image",
+                                                            modifier = Modifier.fillMaxSize(),
+                                                        )
+                                                    }
+                                                    Image(
+                                                        painter = painterResource(id = frameResId),
+                                                        contentDescription = "Frame Preview",
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                }
                                             }
+
                                         }
                                     }
                                 }
@@ -648,9 +916,11 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                                 Icon(
                                     Icons.Default.Close,
                                     contentDescription = "Back",
-                                    tint = Color.Black, modifier = Modifier.align(Alignment.End).clickable {
-                                        selectedTool = EditTool.NONE
-                                    },
+                                    tint = Color.Black, modifier = Modifier
+                                        .align(Alignment.End)
+                                        .clickable {
+                                            selectedTool = EditTool.NONE
+                                        },
                                 )
                                 if (selectedTool == EditTool.BRUSH) {
                                     BrushToolOptions(
@@ -833,7 +1103,8 @@ fun BrushToolOptions(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxWidth().height(200.dp)
+            .fillMaxWidth()
+            .height(200.dp)
             .background(Color.White),
     ) {
 
