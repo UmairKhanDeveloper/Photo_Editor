@@ -7,8 +7,9 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import android.util.Log
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,17 +38,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,12 +62,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -72,6 +76,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -86,6 +91,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.math.roundToInt
 
 enum class EditTool {
     NONE, FILTERS, EFFECTS, TEXT, FRAME, BRUSH
@@ -103,6 +109,17 @@ enum class ImageFilterType(val label: String) {
     VINTAGE("Vintage")
 }
 
+data class TextItem(
+    val id: Int? = null,
+    val text: String,
+    val position: Offset,
+    val fontSize: Float,
+    val rotation: Float,
+    val color: Color,
+    val isBold: Boolean,
+    val shadowRadius: Float,
+    val scale: Float = 1f
+)
 
 
 @Composable
@@ -114,9 +131,7 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
     var isProcessing by remember { mutableStateOf(false) }
     var showCropView by rememberSaveable { mutableStateOf(false) }
     var showDrawingCanvas by rememberSaveable { mutableStateOf(false) }
-
     var imageCrop by remember { mutableStateOf<ImageCrop?>(null) }
-
 
     var selectedTool by rememberSaveable { mutableStateOf(EditTool.NONE) }
     var currentColor by remember { mutableStateOf(Color.Black) }
@@ -126,6 +141,132 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
 
     val paths = remember { mutableStateListOf<PathData>() }
     var currentPath by remember { mutableStateOf(Path()) }
+
+    val textItems = remember { mutableStateListOf<TextItem>() }
+    var textSize by remember { mutableStateOf(24f) }
+    var textRotation by remember { mutableStateOf(0f) }
+    var showTextDialog by remember { mutableStateOf(false) }
+    var inputText by remember { mutableStateOf("") }
+    var selectedColor by remember { mutableStateOf(Color.White) }
+    var isBold by remember { mutableStateOf(false) }
+    var shadowRadius by remember { mutableStateOf(0f) }
+
+    var currentFilter: ImageFilterType? by rememberSaveable { mutableStateOf(null) }
+    var selectedFrameResId by remember { mutableStateOf<Int?>(null) }
+
+
+    if (showTextDialog) {
+        AlertDialog(
+            onDismissRequest = { showTextDialog = false },
+            title = { Text("Add Text") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        label = { Text("Enter your text") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Bold Text", fontWeight = FontWeight.Medium)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .background(
+                                    color = if (isBold) Color.Gray else Color.Transparent,
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = Color.Gray,
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                                .clickable { isBold = !isBold }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text("Choose Color:", fontWeight = FontWeight.Medium)
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val colors = listOf(
+                            Color.White,
+                            Color.Black,
+                            Color.Red,
+                            Color.Green,
+                            Color.Blue,
+                            Color.Yellow,
+                            Color.Magenta,
+                            Color.Cyan,
+                            Color(0xFF8B4513),
+                            Color(0xFF800080),
+                            Color(0xFF008000),
+                            Color(0xFF000080)
+                        )
+
+                        items(colors) { color ->
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(color = color, shape = CircleShape)
+                                    .clickable { selectedColor = color }
+                                    .border(
+                                        width = 2.dp,
+                                        color = if (selectedColor == color) Color.Gray else Color.Transparent,
+                                        shape = CircleShape
+                                    )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        textItems.add(
+                            TextItem(
+                                id = null, // Pass null since the type is Int?
+                                text = inputText,
+                                position = Offset(0f, 0f),
+                                color = selectedColor,
+                                fontSize = textSize,
+                                rotation = textRotation,
+                                shadowRadius = shadowRadius,
+                                isBold = isBold,
+                                scale = 1f
+                            )
+                        )
+
+                        inputText = ""
+                        selectedColor = Color.White
+                        textSize = 24f
+                        textRotation = 0f
+                        shadowRadius = 0f
+                        isBold = false
+                        showTextDialog = false
+                    }
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTextDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     LaunchedEffect(imageUri) {
         imageUri?.let {
@@ -145,90 +286,171 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
         }
     }
 
+    val displayedBitmap = remember(processedBitmap, currentFilter) {
+        if (processedBitmap != null && currentFilter != null) {
+            applyFilter(processedBitmap!!, currentFilter!!)
+        } else {
+            processedBitmap
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
 
-        processedBitmap?.let { bitmap ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(imageAspectRatio)
-                    .align(Alignment.Center)
-                    .zIndex(0f)
-            ) {
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "Edited Image",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit
-                )
-            }
-        }
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            displayedBitmap?.let { bitmap ->
+                Box(
+                    modifier = Modifier
+                        .height(500.dp)
+                        .aspectRatio(imageAspectRatio)
+                        .zIndex(0f)
+                ) {
 
-        if (showCropView && imageCrop != null) {
-            imageCrop!!.ImageCropView(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(imageAspectRatio)
-                    .align(Alignment.Center)
-                    .background(Color.Transparent)
-                    .zIndex(2f),
-                guideLineColor = Color.LightGray,
-                guideLineWidth = 2.dp,
-                edgeCircleSize = 5.dp,
-                showGuideLines = true,
-                cropType = CropType.SQUARE,
-                edgeType = EdgeType.CIRCULAR
-            )
-        }
-        android.graphics.Canvas()
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Edited Image",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
 
+                    Canvas(modifier = Modifier.fillMaxSize().zIndex(1f)) {
+                        paths.forEach { data ->
+                            drawPath(
+                                path = data.path,
+                                color = data.color,
+                                style = Stroke(
+                                    width = data.strokeWidth,
+                                    cap = StrokeCap.Round
+                                )
+                            )
+                        }
+                    }
 
-        if (showDrawingCanvas) {
-            androidx.compose.foundation.Canvas(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(imageAspectRatio)
-                    .align(Alignment.Center)
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { offset ->
-                                currentPath = Path().apply { moveTo(offset.x, offset.y) }
-                            },
-                            onDrag = { change, _ ->
-                                if (isEraser) {
-                                    val eraseTolerance = 20f //
-                                    paths.removeAll { pathData ->
-                                        val position = Offset(change.position.x, change.position.y)
-                                        pathData.path
-                                            .getBounds()
-                                            .contains(position)
-                                    }
-                                } else {
-                                    currentPath.lineTo(change.position.x, change.position.y)
-                                    paths.add(PathData(currentPath, currentColor, currentBrushSize))
+                    textItems.forEachIndexed { index, item ->
+                        var offsetX by remember { mutableStateOf(0f) }
+                        var offsetY by remember { mutableStateOf(0f) }
+
+                        Box(
+                            modifier = Modifier
+                                .offset {
+                                    IntOffset(
+                                        (item.position.x + offsetX).roundToInt(),
+                                        (item.position.y + offsetY).roundToInt()
+                                    )
                                 }
-                            },
-                            onDragEnd = {
-                                currentPath = Path()
-                            }
+                                .graphicsLayer {
+                                    rotationZ = item.rotation
+                                    scaleX = item.scale
+                                    scaleY = item.scale
+                                    transformOrigin = TransformOrigin.Center
+                                }
+                                .pointerInput(Unit) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            offsetX = 0f
+                                            offsetY = 0f
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            offsetX += dragAmount.x
+                                            offsetY += dragAmount.y
+                                            textItems[index] = item.copy(
+                                                position = Offset(
+                                                    item.position.x + dragAmount.x,
+                                                    item.position.y + dragAmount.y
+                                                )
+                                            )
+                                        }
+                                    )
+                                }
+                                .zIndex(2f)
+                        ) {
+                            Text(
+                                text = item.text,
+                                color = item.color,
+                                fontSize = item.fontSize.sp,
+                                fontWeight = if (item.isBold) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(4.dp)
+                            )
+                        }
+                    }
+
+                    if (showCropView && imageCrop != null) {
+                        imageCrop!!.ImageCropView(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .zIndex(3f),
+                            guideLineColor = Color.LightGray,
+                            guideLineWidth = 2.dp,
+                            edgeCircleSize = 5.dp,
+                            showGuideLines = true,
+                            cropType = CropType.SQUARE,
+                            edgeType = EdgeType.CIRCULAR
                         )
                     }
-                    .zIndex(4f)
-            ) {
-                paths.forEach { data ->
-                    drawPath(
-                        path = data.path,
-                        color = data.color,
-                        style = Stroke(width = data.strokeWidth, cap = StrokeCap.Round)
-                    )
+
+                    if (showDrawingCanvas) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            currentPath = Path().apply { moveTo(offset.x, offset.y) }
+                                        },
+                                        onDrag = { change, _ ->
+                                            if (isEraser) {
+                                                paths.removeAll { it.path.getBounds().contains(change.position) }
+                                            } else {
+                                                currentPath.lineTo(change.position.x, change.position.y)
+                                                paths.add(
+                                                    PathData(currentPath, currentColor, currentBrushSize)
+                                                )
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            currentPath = Path()
+                                        }
+                                    )
+                                }
+                                .zIndex(4f)
+                        ) {}
+                    }
+
+                    // Frame Overlay - APPLYING THE FRAME
+                    selectedFrameResId?.let { frameResId ->
+                        Image(
+                            painter = painterResource(id = frameResId),
+                            contentDescription = "Frame",
+                            modifier = Modifier.fillMaxSize(), // Fill the whole image area
+                            contentScale = ContentScale.FillBounds // Stretch frame to fill the bounds
+                        )
+                    }
+
                 }
             }
-        }
 
+            if (isProcessing) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .zIndex(10f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color.White)
+                }
+            }
 
-
-        if (processedBitmap == null) {
-            Text("No image selected", modifier = Modifier.align(Alignment.Center))
+            if (displayedBitmap == null && !isProcessing) {
+                Text(
+                    text = "No image selected",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
         }
 
         if (isProcessing) {
@@ -272,6 +494,10 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                             imageAspectRatio =
                                 croppedBitmap.width.toFloat() / croppedBitmap.height.toFloat()
                             showCropView = false
+                        } else {
+                            if (currentFilter != null) {
+                                processedBitmap = applyFilter(displayedBitmap!!, currentFilter!!)
+                            }
                         }
                     },
                     modifier = Modifier
@@ -284,7 +510,6 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
             }
 
             Spacer(modifier = Modifier.weight(1f))
-
             Spacer(modifier = Modifier.weight(1f))
 
             if (selectedTool != EditTool.NONE) {
@@ -311,24 +536,19 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
                             )
-
-                            IconButton(
-                                onClick = { selectedTool = EditTool.NONE },
-                                modifier = Modifier
-                                    .size(30.dp)
-                                    .background(Color.Gray.copy(alpha = 0.3f), shape = CircleShape)
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Back",
-                                    tint = Color.White
-                                )
-                            }
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
                         when (selectedTool) {
                             EditTool.FILTERS -> {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Back",
+                                    tint = Color.Black, modifier = Modifier.align(Alignment.End).clickable {
+                                        selectedTool = EditTool.NONE
+                                    },
+                                )
+
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     modifier = Modifier
@@ -349,7 +569,7 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                                                         .size(80.dp)
                                                         .clip(RoundedCornerShape(8.dp))
                                                         .clickable {
-                                                            processedBitmap = applyFilter(it, filterType)
+                                                            currentFilter = filterType
                                                         }
                                                 )
                                             }
@@ -362,18 +582,86 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                                     }
                                 }
                             }
-                            EditTool.TEXT -> {Text("Text input UI goes here", color = Color.White)}
-                            EditTool.FRAME -> {Text("Frame selector UI goes here", color = Color.White)}
-                            EditTool.BRUSH -> {
-                                BrushToolOptions(
-                                    selectedColor = currentColor,
-                                    brushSize = currentBrushSize,
-                                    opacity = currentOpacity,
-                                    onColorChange = { currentColor = it },
-                                    onBrushSizeChange = { currentBrushSize = it },
-                                    onOpacityChange = { currentOpacity = it }
+                            EditTool.TEXT -> {
+                                showTextDialog = true
+                                selectedTool = EditTool.NONE
+                            }
+
+                            EditTool.FRAME -> {
+                                val frameList = listOf(
+                                    R.drawable.frame1,
+                                    R.drawable.frame2,
+                                    R.drawable.frame3,
+                                    R.drawable.frame4,
+                                    R.drawable.frame5,
+                                    R.drawable.frame6,
+                                    R.drawable.frame7,
+                                    R.drawable.frame8,
+                                    R.drawable.frame9,
+                                    R.drawable.frame10,
+                                    R.drawable.frame11,
+                                    R.drawable.frame12,
+
                                 )
 
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = "Select a Frame",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier
+                                            .padding(start = 16.dp, top = 16.dp, bottom = 8.dp),
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                    LazyRow(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        items(frameList) { frameResId ->
+                                            Card(
+                                                shape = RoundedCornerShape(12.dp),
+                                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                                                border = BorderStroke(
+                                                    2.dp,
+                                                    if (selectedFrameResId == frameResId) MaterialTheme.colorScheme.primary else Color.Transparent
+                                                ),
+                                                modifier = Modifier
+                                                    .size(90.dp)
+                                                    .clickable { selectedFrameResId = frameResId }
+                                            ) {
+                                                Image(
+                                                    painter = painterResource(id = frameResId),
+                                                    contentDescription = "Frame Preview",
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+
+
+                            EditTool.BRUSH -> {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Back",
+                                    tint = Color.Black, modifier = Modifier.align(Alignment.End).clickable {
+                                        selectedTool = EditTool.NONE
+                                    },
+                                )
+                                if (selectedTool == EditTool.BRUSH) {
+                                    BrushToolOptions(
+                                        selectedColor = currentColor,
+                                        brushSize = currentBrushSize,
+                                        opacity = currentOpacity,
+                                        onColorChange = { currentColor = it },
+                                        onBrushSizeChange = { currentBrushSize = it },
+                                        onOpacityChange = { currentOpacity = it }
+                                    )
+                                }
                             }
 
                             else -> {}
@@ -428,10 +716,10 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
 
                     PhotoEditItem(
                         icon = painterResource(id = R.drawable.brush),
-                        title = if (showDrawingCanvas) "Done" else "Brush"
+                        title = "Brush"
                     ) {
                         showCropView = false
-                        showDrawingCanvas = !showDrawingCanvas
+                        showDrawingCanvas = true
                         selectedTool = EditTool.BRUSH
                     }
 
@@ -439,16 +727,22 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                         icon = painterResource(id = R.drawable.filters),
                         title = "Filters"
                     ) {
+                        showDrawingCanvas = false
+                        showCropView = false
                         selectedTool = EditTool.FILTERS
                     }
                     PhotoEditItem(icon = painterResource(id = R.drawable.text), title = "Text") {
+                        showCropView = false
                         selectedTool = EditTool.TEXT
+                        showDrawingCanvas = false
                     }
 
                     PhotoEditItem(
                         icon = painterResource(id = R.drawable.frame),
                         title = "Bg Frame"
                     ) {
+                        showDrawingCanvas = false
+                        showCropView = false
                         selectedTool = EditTool.FRAME
                     }
                 }
@@ -539,9 +833,8 @@ fun BrushToolOptions(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxWidth().height(200.dp)
             .background(Color.White),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
 
         Text("Brush", fontWeight = FontWeight.Medium, fontSize = 14.sp)
