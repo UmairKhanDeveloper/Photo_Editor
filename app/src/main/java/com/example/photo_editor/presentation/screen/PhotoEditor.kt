@@ -187,102 +187,90 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                     onClick = {
                         downloadDialog = false
                         try {
-                            // Create a bitmap that includes all modifications
                             processedBitmap?.let { bitmap ->
-                                // Create a bitmap with the same dimensions as the displayed image
                                 val resultBitmap = Bitmap.createBitmap(
                                     bitmap.width,
                                     bitmap.height,
                                     Bitmap.Config.ARGB_8888
                                 )
                                 val canvas = android.graphics.Canvas(resultBitmap)
-                                
-                                // Draw the base image with any applied filters
+
                                 val filteredBitmap = if (currentFilter != null) {
                                     applyFilter(bitmap, currentFilter!!)
                                 } else {
                                     bitmap
                                 }
                                 canvas.drawBitmap(filteredBitmap, 0f, 0f, null)
-                                
-                                // Draw all paths (brush strokes) with exact positions and styles
+
                                 paths.forEach { pathData ->
-                                    try {
-                                        val paint = android.graphics.Paint().apply {
-                                            color = android.graphics.Color.parseColor(
-                                                String.format("#%08X", pathData.color.value.toInt())
-                                            )
-                                            strokeWidth = pathData.strokeWidth
-                                            style = android.graphics.Paint.Style.STROKE
-                                            strokeCap = android.graphics.Paint.Cap.ROUND
-                                            strokeJoin = android.graphics.Paint.Join.ROUND
-                                            alpha = (pathData.color.alpha * 255).toInt()
-                                        }
-                                        canvas.drawPath(pathData.path.asAndroidPath(), paint)
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
+                                    val paint = android.graphics.Paint().apply {
+                                        val androidColor = android.graphics.Color.argb(
+                                            (pathData.color.alpha * 255).toInt(),
+                                            (pathData.color.red * 255).toInt(),
+                                            (pathData.color.green * 255).toInt(),
+                                            (pathData.color.blue * 255).toInt()
+                                        )
+                                        color = androidColor
+                                        strokeWidth = pathData.strokeWidth
+                                        style = android.graphics.Paint.Style.STROKE
+                                        strokeCap = android.graphics.Paint.Cap.ROUND
+                                        strokeJoin = android.graphics.Paint.Join.ROUND
+                                        isAntiAlias = true
                                     }
+                                    canvas.drawPath(pathData.path.asAndroidPath(), paint)
                                 }
-                                
-                                // Draw all text items with exact positions, rotations, and styles
+
                                 textItems.forEach { textItem ->
-                                    try {
-                                        val paint = android.graphics.Paint().apply {
-                                            color = android.graphics.Color.parseColor(
-                                                String.format("#%08X", textItem.color.value.toInt())
+                                    val paint = android.graphics.Paint().apply {
+                                        val androidColor = android.graphics.Color.argb(
+                                            (textItem.color.alpha * 255).toInt(),
+                                            (textItem.color.red * 255).toInt(),
+                                            (textItem.color.green * 255).toInt(),
+                                            (textItem.color.blue * 255).toInt()
+                                        )
+                                        color = androidColor
+                                        textSize = textItem.fontSize * textItem.scale
+                                        isFakeBoldText = textItem.isBold
+                                        isAntiAlias = true
+                                        if (textItem.shadowRadius > 0) {
+                                            setShadowLayer(
+                                                textItem.shadowRadius,
+                                                0f,
+                                                0f,
+                                                android.graphics.Color.BLACK
                                             )
-                                            textSize = textItem.fontSize * textItem.scale
-                                            isFakeBoldText = textItem.isBold
-                                            if (textItem.shadowRadius > 0) {
-                                                setShadowLayer(
-                                                    textItem.shadowRadius,
-                                                    0f,
-                                                    0f,
-                                                    android.graphics.Color.BLACK
-                                                )
-                                            }
-                                            alpha = (textItem.color.alpha * 255).toInt()
                                         }
-                                        
-                                        canvas.save()
-                                        canvas.rotate(
-                                            textItem.rotation,
-                                            textItem.position.x,
-                                            textItem.position.y
-                                        )
-                                        canvas.drawText(
-                                            textItem.text,
-                                            textItem.position.x,
-                                            textItem.position.y,
-                                            paint
-                                        )
-                                        canvas.restore()
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
                                     }
+                                    
+                                    canvas.save()
+                                    canvas.rotate(
+                                        textItem.rotation,
+                                        textItem.position.x,
+                                        textItem.position.y
+                                    )
+                                    canvas.drawText(
+                                        textItem.text,
+                                        textItem.position.x,
+                                        textItem.position.y,
+                                        paint
+                                    )
+                                    canvas.restore()
                                 }
                                 
-                                // Draw frame if selected
+
                                 selectedFrameResId?.let { frameResId ->
-                                    try {
-                                        val frameBitmap = BitmapFactory.decodeResource(
-                                            context.resources,
-                                            frameResId
-                                        )
-                                        // Scale frame to match image size
-                                        val scaledFrame = Bitmap.createScaledBitmap(
-                                            frameBitmap,
-                                            bitmap.width,
-                                            bitmap.height,
-                                            true
-                                        )
-                                        canvas.drawBitmap(scaledFrame, 0f, 0f, null)
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
+                                    val frameBitmap = BitmapFactory.decodeResource(
+                                        context.resources,
+                                        frameResId
+                                    )
+                                    val scaledFrame = Bitmap.createScaledBitmap(
+                                        frameBitmap,
+                                        bitmap.width,
+                                        bitmap.height,
+                                        true
+                                    )
+                                    canvas.drawBitmap(scaledFrame, 0f, 0f, null)
                                 }
-                                
-                                // Save the final bitmap
                                 try {
                                     val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
                                         .format(Date())
@@ -300,8 +288,7 @@ fun PhotoEditor(navController: NavController, imageUri: String?) {
                                             out
                                         )
                                     }
-                                    
-                                    // Notify media scanner to make the image visible in gallery
+
                                     val values = ContentValues().apply {
                                         put(MediaStore.Images.Media.DISPLAY_NAME, filename)
                                         put(MediaStore.Images.Media.MIME_TYPE, "image/png")
